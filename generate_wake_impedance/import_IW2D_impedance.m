@@ -68,9 +68,11 @@ function struct = import_IW2D_impedance(file,sampling_points,betas)
             average_betax(i) = integrate(betas.betax,element_s(i+1),element_s(i))./element_length(i);            
         end
     else
-        average_betax = 1;
+        element_length = data_hor{2};
+        element_s = [0; cumsum(element_length)]';
+        average_betax = ones(1,length(element_s)-1);
     end
-
+      
     fprintf('Reading horizontal files\n');
     for i = 1:size(data_hor{1},1)
         
@@ -108,7 +110,9 @@ function struct = import_IW2D_impedance(file,sampling_points,betas)
             average_betay(i) = integrate(betas.betay,element_s(i+1),element_s(i))./element_length(i);            
         end
     else
-        average_betay = 1;
+        element_length = data_ver{2};
+        element_s = [0; cumsum(element_length)]';
+        average_betay = ones(1,length(element_s)-1);
     end
 
     fprintf('Reading vertical files\n');
@@ -136,6 +140,10 @@ function struct = import_IW2D_impedance(file,sampling_points,betas)
         
     end
     fprintf('Finished reading vertical files. Read %d lines.\n\n',i);
+    
+    %% Save local beta functions
+        
+    save('local_beta','element_s','average_betax','average_betay');  
     
     %% Create output struct
 
