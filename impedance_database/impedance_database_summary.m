@@ -49,7 +49,32 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
     fprintf('Total length = %f\n',total_length)
     fprintf('\n')
 
-    %% Apertures
+    %% Geometric impedance statistics
+    
+    % Get all classes in database
+    classes = unique(atgetfieldvalues(IMPRING,'Class'));
+    
+    % Print out
+    fprintf('Components:\n')
+    for i = 1:length(classes)
+        
+        % Get elements in class
+        elements_in_class = findcells(IMPRING,'Class',classes{i});
+        
+        % Get components in class and amount of each
+        components = unique(atgetfieldvalues(IMPRING(elements_in_class),'FamName'));
+        component_amount = zeros(length(components),1);
+        for j = 1:length(components)
+            elements = findcells(IMPRING,'FamName',components{j});
+            component_amount(j) = length(elements);
+        end
+                
+        fprintf('%s:\n',classes{i})
+        for j = 1:length(components)
+            fprintf('%s: %d \n',components{j},component_amount(j))
+        end
+        fprintf('\n')        
+    end    %% Apertures
     
     if aperture_flag
 
@@ -88,33 +113,55 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
         xlim([0,total_length])
         %xlim([0,total_length./6])
     end
+    
+    %% Plot apertures
+    
+    if aperture_flag
 
-    %% Geometric impedance statistics
-    
-    % Get all classes in database
-    classes = unique(atgetfieldvalues(IMPRING,'Class'));
-    
-    % Print out
-    fprintf('Components:\n')
-    for i = 1:length(classes)
+        color=get(gca,'ColorOrder');
+
+        % Find position of entrance of each element
+        s = findspos(IMPRING,1:length(IMPRING))';
+        lengths = atgetfieldvalues(IMPRING,'Length');
+
+        apertures = atgetfieldvalues(IMPRING,'Apertures');
+        apertures  = cat(1,apertures{:});
+        upstream_apertures  = apertures(1:2:end,:);
+        downstream_apertures  = apertures(2:2:end,:);
+
+        figure(1)
+        plot(s,upstream_apertures(:,1)*1e3,'.-','Color',color(1,:))
+        hold on
+        plot(s+lengths,downstream_apertures(:,1)*1e3,'.-','Color',color(2,:))
+        plot(s,upstream_apertures(:,2)*1e3,'.-','Color',color(1,:))
+        plot(s+lengths,downstream_apertures(:,2)*1e3,'.-','Color',color(2,:))
+        hold off
+        xlabel('Position [m]')
+        ylabel('Horizontal aperture [mm]')
+        xlim([0,total_length])
+        legend('Upstream','Downstream')
+        %xlim([0,total_length./6])
         
-        % Get elements in class
-        elements_in_class = findcells(IMPRING,'Class',classes{i});
+        datacursormode on
+        dcm = datacursormode(gcf);         
+        set(dcm,'UpdateFcn',@(t,e) myupdatefcn(t,e,IMPRING,s) );
         
-        % Get components in class and amount of each
-        components = unique(atgetfieldvalues(IMPRING(elements_in_class),'FamName'));
-        component_amount = zeros(length(components),1);
-        for j = 1:length(components)
-            elements = findcells(IMPRING,'FamName',components{j});
-            component_amount(j) = length(elements);
-        end
-                
-        fprintf('%s:\n',classes{i})
-        for j = 1:length(components)
-            fprintf('%s: %d \n',components{j},component_amount(j))
-        end
-        fprintf('\n')        
-    end
+        figure(2)
+        plot(s,upstream_apertures(:,3)*1e3,'.-','Color',color(1,:))
+        hold on
+        plot(s+lengths,downstream_apertures(:,3)*1e3,'.-','Color',color(2,:))
+        plot(s,upstream_apertures(:,4)*1e3,'.-','Color',color(1,:))
+        plot(s+lengths,downstream_apertures(:,4)*1e3,'.-','Color',color(2,:))
+        hold off
+        xlabel('Position [m]')
+        ylabel('Vertical aperture [mm]')
+        xlim([0,total_length])
+        %xlim([0,total_length./6])
+        
+        datacursormode on
+        dcm = datacursormode(gcf);         
+        set(dcm,'UpdateFcn',@(t,e) myupdatefcn(t,e,IMPRING,s) );        
+    end    
                 
     %% Plot pie charts
     
@@ -264,6 +311,15 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
     end
 
 
+end
+
+function txt = myupdatefcn(~,event,ring,s)
+    pos = get(event,'Position');
+    i = find(s==pos(1));
+    element = cell2mat(atgetfieldvalues(ring,i,'FamName'));
+    txt = {[element], ...
+        ['x: ',num2str(pos(1))],...
+        ['y: ',num2str(pos(2))]};        
 end
 
 
