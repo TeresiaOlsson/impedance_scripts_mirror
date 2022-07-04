@@ -7,16 +7,35 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
     %% Resistive wall statistics
 
     % Get all materials in database
-    materials = unique(atgetfieldvalues(IMPRING,'Material'));
+    values = atgetfieldvalues(IMPRING,'Material');
+    
+    % Handle several materials
+    for i = 1:length(values)
+        if length(values{i}) > 1
+            str = '';
+            for j = 1:length(values{i})
+                if j < length(values{i})
+                    new_str = [values{i}{j}, ' + '];
+                else
+                    new_str = values{i}{j};
+                end
+                str = append(str,new_str);
+            end
+            values{i} = str;
+        else
+            values{i} = char(values{i});
+        end           
+    end
+    
+    materials = values;
+    materials_unique = unique(materials);
 
     % Get total length of each material
-    material_lengths = zeros(length(materials),1);
+    material_lengths = zeros(length(materials_unique),1);
 
-    for i = 1:length(materials)
-
-        elements = findcells(IMPRING,'Material',materials{i});
+    for i = 1:length(materials_unique)        
+        elements = find(strcmp(materials_unique(i),materials));
         material_lengths(i) = sum(atgetfieldvalues(IMPRING,elements,'Length'));
-
     end
 
     % Total length
@@ -24,8 +43,8 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
 
     % Print out
     fprintf('Resistive wall:\n')
-    for i = 1:length(materials)
-        fprintf('%s: %.5f m (%.2f%%)\n',materials{i},material_lengths(i),(material_lengths(i)./total_length).*100)
+    for i = 1:length(materials_unique)
+        fprintf('%s: %.5f m (%.2f%%)\n',materials_unique{i},material_lengths(i),(material_lengths(i)./total_length).*100)
     end
     fprintf('Total length = %f\n',total_length)
     fprintf('\n')
@@ -71,27 +90,32 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
     end
 
     %% Geometric impedance statistics
-
-    % Get all components in database
-    components = unique(atgetfieldvalues(IMPRING,'FamName'));
-
-    % Get number of components
-    component_amount = zeros(length(components),1);
-
-    for i = 1:length(components)
-
-        elements = findcells(IMPRING,'FamName',components{i});
-        component_amount(i) = length(elements);
-
-    end
-
+    
+    % Get all classes in database
+    classes = unique(atgetfieldvalues(IMPRING,'Class'));
+    
     % Print out
-    fprintf('Number of components:\n')
-    for i = 1:length(components)
-        fprintf('%s: %d \n',components{i},component_amount(i))
+    fprintf('Components:\n')
+    for i = 1:length(classes)
+        
+        % Get elements in class
+        elements_in_class = findcells(IMPRING,'Class',classes{i});
+        
+        % Get components in class and amount of each
+        components = unique(atgetfieldvalues(IMPRING(elements_in_class),'FamName'));
+        component_amount = zeros(length(components),1);
+        for j = 1:length(components)
+            elements = findcells(IMPRING,'FamName',components{j});
+            component_amount(j) = length(elements);
+        end
+                
+        fprintf('%s:\n',classes{i})
+        for j = 1:length(components)
+            fprintf('%s: %d \n',components{j},component_amount(j))
+        end
+        fprintf('\n')        
     end
-    fprintf('\n')
-
+                
     %% Plot pie charts
     
     if pie_flag
@@ -109,24 +133,30 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
             tot_k_factors(i,:) = tot_k_factors(i,:) + sum(abs(k_factors));
 
         end
-
+        
+        % Plot 4 largest
+        
         labels = classes;
+        
+        [~,max_index_hor] = maxk(tot_k_factors(:,1),4);
+        [~,max_index_ver] = maxk(tot_k_factors(:,2),4);
+        [~,max_index_lon] = maxk(tot_k_factors(:,3),4);        
 
         figure(3)
-        pie(tot_k_factors(:,1))
-        legend(labels,'Location','NorthWestOutside')
+        pie(tot_k_factors(max_index_hor,1))
+        legend(labels(max_index_hor),'Location','NorthWestOutside')
         title('Horizontal kick factor')
         colormap('lines')
 
         figure(4)
-        pie(tot_k_factors(:,2))
-        legend(labels,'Location','NorthWestOutside')
+        pie(tot_k_factors(max_index_ver,2))
+        legend(labels(max_index_ver),'Location','NorthWestOutside')
         title('Vertical kick factor')
         colormap('lines')
 
         figure(5)
-        pie(tot_k_factors(:,3))
-        legend(labels,'Location','NorthWestOutside')
+        pie(tot_k_factors(max_index_lon,3))
+        legend(labels(max_index_lon),'Location','NorthWestOutside')
         title('Loss factor')
         colormap('lines')
         
