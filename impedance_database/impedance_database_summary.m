@@ -1,8 +1,12 @@
-function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_flag)
+function impedance_database_summary(IMPRING,beta_file)
 %% Produce summary statistics for impedance database
 % aperture_flag - plot apertures
-% pie_flag - calculate loss/kick factoran and plot pie charts
-% impedance_flag - plot impedance
+% pie_flag - calculate loss/kick factor and plot pie charts
+% impedance_flag - plot impedance as function of frequency
+
+aperture_flag = 1;
+pie_flag = 1;
+impedance_flag = 1;
 
     %% Resistive wall statistics
 
@@ -115,6 +119,8 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
     end
     
     %% Plot apertures
+    % Both upstream and downstream apertures are plotted to be able to see
+    % where tapers are missing in the lattice.
     
     if aperture_flag
 
@@ -140,7 +146,6 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
         ylabel('Horizontal aperture [mm]')
         xlim([0,total_length])
         legend('Upstream','Downstream')
-        %xlim([0,total_length./6])
         
         datacursormode on
         dcm = datacursormode(gcf);         
@@ -156,7 +161,7 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
         xlabel('Position [m]')
         ylabel('Vertical aperture [mm]')
         xlim([0,total_length])
-        %xlim([0,total_length./6])
+        legend('Upstream','Downstream')
         
         datacursormode on
         dcm = datacursormode(gcf);         
@@ -165,7 +170,8 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
                 
     %% Calculate loss/kick factors and plot pie charts
     % IW2D input - loss/kick factors calculated using impedance since wake
-    % already convoluted with unknown bunch length
+    % already convoluted with unknown bunch length so results are wrong if
+    % calculating using the wake.
     % CST input - loss/kick factors calculated using impedance but factors
     % using wake also calculated for comparison with CST. For the wake
     % calculations sigma_t must match the bunch length that was used in CST
@@ -387,104 +393,258 @@ function impedance_database_summary(IMPRING,aperture_flag,pie_flag,impedance_fla
         
     end
 
-    %% Plot cumulative impedance
+    %% Plot impedance as function of frequency
+    % The transverse calculation includes multiplication with the local
+    % average beta function
     
     if impedance_flag
+        
+        % Frequency interpolation parameters
+        sampling_freq = linspace(0,35e9,1e4)';
+        
+        % Get local average beta
+        average_betax = ones(1,length(IMPRING)-1);
+        average_betay = ones(1,length(IMPRING)-1); 
+        
+        if ~isempty(beta_file)
+            beta_functions = interpolate_beta(beta_file);
+            
+            element_length = atgetfieldvalues(IMPRING,'Length');
+            element_s = [0; cumsum(element_length)]';
+              
+            for i = 1:length(element_s)-1                   
+                average_betax(i) = integrate(beta_functions.betax,element_s(i+1),element_s(i))./element_length(i);
+                average_betay(i) = integrate(beta_functions.betay,element_s(i+1),element_s(i))./element_length(i);                   
+            end  
+        end
+                     
+        % Find components and amount             
+        components = unique(atgetfieldvalues(IMPRING,'FamName'));
+        component_amount = zeros(length(components),1);
+        for j = 1:length(components)
+            elements = findcells(IMPRING,'FamName',components{j});
+            component_amount(j) = length(elements);
+        end
+               
+        hor_impedance_RW = zeros(length(sampling_freq),2);      
+        ver_impedance_RW = zeros(length(sampling_freq),2);        
+        lon_impedance_RW = zeros(length(sampling_freq),2);
+        hor_real_impedance_geom = zeros(length(sampling_freq),length(components));
+        hor_imag_impedance_geom = zeros(length(sampling_freq),length(components));
+        ver_real_impedance_geom = zeros(length(sampling_freq),length(components));
+        ver_imag_impedance_geom = zeros(length(sampling_freq),length(components));    
+        lon_real_impedance_geom = zeros(length(sampling_freq),length(components));
+        lon_imag_impedance_geom = zeros(length(sampling_freq),length(components));         
+                             
+        for i = 1:length(components)
+            
+            % Get element in family
+            element_index = findcells(IMPRING,'FamName',components{i});
+            
+            % Get average beta for elements in family
+            tot_average_betax = sum(average_betax(element_index));
+            tot_average_betay = sum(average_betay(element_index));
+            
+            % Resistive-wall
+            
+            % Get length
+            RW_length = IMPRING{element_index(1)}.Length;
+            
+            if ~isempty(IMPRING{element_index(1)}.RW_impedance_files)
+                
+                hor_data = importdata(IMPRING{element_index(1)}.RW_impedance_files{1}).data;
+                real_impedance = interp1(hor_data(:,1),hor_data(:,3),sampling_freq,'linear',0).*RW_length.*tot_average_betax;
+                imag_impedance = interp1(hor_data(:,1),-hor_data(:,2),sampling_freq,'linear',0).*RW_length.*tot_average_betax;
+                hor_impedance_RW = hor_impedance_RW + [real_impedance,imag_impedance];
+                
+                ver_data = importdata(IMPRING{element_index(1)}.RW_impedance_files{2}).data;
+                real_impedance = interp1(ver_data(:,1),ver_data(:,3),sampling_freq,'linear',0).*RW_length.*tot_average_betay;
+                imag_impedance = interp1(ver_data(:,1),-ver_data(:,2),sampling_freq,'linear',0).*RW_length.*tot_average_betay;
+                ver_impedance_RW = ver_impedance_RW + [real_impedance,imag_impedance];                
+                
+                lon_data = importdata(IMPRING{element_index(1)}.RW_impedance_files{3}).data;
+                real_impedance = interp1(lon_data(:,1),lon_data(:,2),sampling_freq,'linear',0).*RW_length.*component_amount(i);
+                imag_impedance = interp1(lon_data(:,1),lon_data(:,3),sampling_freq,'linear',0).*RW_length.*component_amount(i);
+                lon_impedance_RW = lon_impedance_RW + [real_impedance,imag_impedance];
+                                           
+            end
+                
+            % Geometric
+        
+            if ~isempty(IMPRING{element_index(1)}.Geom_impedance_files)
+                
+                fileID = fopen(IMPRING{element_index(1)}.Geom_impedance_files{1});
+                data = textscan(fileID,'%f %f %f','CommentStyle','#');
+                fclose(fileID);
+                hor_data = cell2mat(data);  % Units GHz, Ohm/mm
+                % Change units to Hz and Ohm/m and switch to Elegant
+                % conventions
+                freq = hor_data(:,1).*1e9;
+                real_impedance = -hor_data(:,3).*1e3;
+                imag_impedance = hor_data(:,2).*1e3;              
+                real_impedance_interp = interp1(freq,real_impedance,sampling_freq,'linear',0).*tot_average_betax;
+                imag_impedance_interp = interp1(freq,imag_impedance,sampling_freq,'linear',0).*tot_average_betax;
+                hor_real_impedance_geom(:,i) = real_impedance_interp;
+                hor_imag_impedance_geom(:,i) = imag_impedance_interp;
 
-        % Interpolation parameters
-        sampling_freq = linspace(0,35,1e4)'; %Units are in GHz
-    
-        % Find classes
-        classes = unique(atgetfieldvalues(IMPRING,'Class'));
-        labels = classes;
-
-        % Get impedance per class
-        hor_real_impedance = zeros(length(sampling_freq),length(classes));
-        hor_imag_impedance = zeros(length(sampling_freq),length(classes));
-        ver_real_impedance = zeros(length(sampling_freq),length(classes));
-        ver_imag_impedance = zeros(length(sampling_freq),length(classes));
-        lon_real_impedance = zeros(length(sampling_freq),length(classes));
-        lon_imag_impedance = zeros(length(sampling_freq),length(classes));
-
-        for i = 1:length(classes)
-
-            elements = findcells(IMPRING,'Class',classes{i});
-
-            for j = 1:length(elements)
-
-                if ~isempty(IMPRING{elements(j)}.Geom_impedance_files)
-
-                    % Import horizontal impedance data
-                    hor_data = importdata(IMPRING{elements(j)}.Geom_impedance_files{1}).data;
-
-                    real_impedance = interp1(hor_data(:,1),hor_data(:,2),sampling_freq,'linear',0);
-                    imag_impedance = interp1(hor_data(:,1),hor_data(:,3),sampling_freq,'linear',0);
-
-                    hor_real_impedance(:,i) = hor_real_impedance(:,i) + real_impedance;
-                    hor_imag_impedance(:,i) = hor_imag_impedance(:,i) + imag_impedance;
-
-                    % Import vertical impedance data
-                    ver_data = importdata(IMPRING{elements(j)}.Geom_impedance_files{2}).data;
-
-                    real_impedance = interp1(ver_data(:,1),ver_data(:,2),sampling_freq,'linear',0);
-                    imag_impedance = interp1(ver_data(:,1),ver_data(:,3),sampling_freq,'linear',0);
-
-                    ver_real_impedance(:,i) = ver_real_impedance(:,i) + real_impedance;
-                    ver_imag_impedance(:,i) = ver_imag_impedance(:,i) + imag_impedance; 
-
-                    % Import longitudinal impedance data
-                    lon_data = importdata(IMPRING{elements(j)}.Geom_impedance_files{3}).data;
-
-                    real_impedance = interp1(lon_data(:,1),lon_data(:,2),sampling_freq,'linear',0);
-                    imag_impedance = interp1(lon_data(:,1),lon_data(:,3),sampling_freq,'linear',0);
-
-                    lon_real_impedance(:,i) = lon_real_impedance(:,i) + real_impedance;
-                    lon_imag_impedance(:,i) = lon_imag_impedance(:,i) + imag_impedance;               
-
-                end
+                fileID = fopen(IMPRING{element_index(1)}.Geom_impedance_files{2});
+                data = textscan(fileID,'%f %f %f','CommentStyle','#');
+                fclose(fileID);
+                ver_data = cell2mat(data);  % Units GHz, Ohm/mm
+                % Change units to Hz and Ohm/m and switch to Elegant
+                % conventions
+                freq = ver_data(:,1).*1e9;
+                real_impedance = -ver_data(:,3).*1e3;
+                imag_impedance = ver_data(:,2).*1e3;              
+                real_impedance_interp = interp1(freq,real_impedance,sampling_freq,'linear',0).*tot_average_betay;
+                imag_impedance_interp = interp1(freq,imag_impedance,sampling_freq,'linear',0).*tot_average_betay;
+                ver_real_impedance_geom(:,i) = real_impedance_interp;
+                ver_imag_impedance_geom(:,i) = imag_impedance_interp;
+            
+                fileID = fopen(IMPRING{element_index(1)}.Geom_impedance_files{3});
+                data = textscan(fileID,'%f %f %f','CommentStyle','#');
+                fclose(fileID);
+                lon_data = cell2mat(data);  % Units GHz, Ohm
+                % Change units to Hz
+                freq = lon_data(:,1).*1e9;
+                real_impedance = lon_data(:,2);
+                imag_impedance = lon_data(:,3);
+                real_impedance_interp = interp1(freq,real_impedance,sampling_freq,'linear',0).*component_amount(i);
+                imag_impedance_interp = interp1(freq,imag_impedance,sampling_freq,'linear',0).*component_amount(i);
+                lon_real_impedance_geom(:,i) = real_impedance_interp;
+                lon_imag_impedance_geom(:,i) = imag_impedance_interp;           
 
             end
-
+            
         end
-
+        
+        % Total geometric impedance per classs
+        classes = unique(atgetfieldvalues(IMPRING,'Class'));
+        
+        tot_hor_real_impedance_geom = zeros(length(sampling_freq),length(classes));
+        tot_hor_imag_impedance_geom = zeros(length(sampling_freq),length(classes));
+        tot_ver_real_impedance_geom = zeros(length(sampling_freq),length(classes));
+        tot_ver_imag_impedance_geom = zeros(length(sampling_freq),length(classes));    
+        tot_lon_real_impedance_geom = zeros(length(sampling_freq),length(classes));
+        tot_lon_imag_impedance_geom = zeros(length(sampling_freq),length(classes));   
+                       
+        for i = 1:length(classes)
+            
+            % Find families in class
+            elements = findcells(IMPRING,'Class',classes{i});
+            families = unique(atgetfieldvalues(IMPRING,elements,'FamName'));     
+             
+            [~,index] = ismember(families,components);
+            tot_hor_real_impedance_geom(:,i) = sum(hor_real_impedance_geom(:,index),2);
+            tot_hor_imag_impedance_geom(:,i) = sum(hor_imag_impedance_geom(:,index),2);
+            tot_ver_real_impedance_geom(:,i) = sum(ver_real_impedance_geom(:,index),2);
+            tot_ver_imag_impedance_geom(:,i) = sum(ver_imag_impedance_geom(:,index),2);   
+            tot_lon_real_impedance_geom(:,i) = sum(lon_real_impedance_geom(:,index),2);
+            tot_lon_imag_impedance_geom(:,i) = sum(lon_imag_impedance_geom(:,index),2);
+        end
+        
+        % Plot resistive wall and four largest classes
+        
+        hor_real_plot = [hor_impedance_RW(:,1),tot_hor_real_impedance_geom(:,max_index_hor),sum(tot_lon_real_impedance_geom(:,setdiff(1:end, max_index_hor)),2)];
+        hor_imag_plot = [hor_impedance_RW(:,2),tot_hor_imag_impedance_geom(:,max_index_hor),sum(tot_lon_imag_impedance_geom(:,setdiff(1:end, max_index_hor)),2)];                 
+        ver_real_plot = [ver_impedance_RW(:,1),tot_ver_real_impedance_geom(:,max_index_ver),sum(tot_lon_real_impedance_geom(:,setdiff(1:end, max_index_ver)),2)];
+        ver_imag_plot = [ver_impedance_RW(:,2),tot_ver_imag_impedance_geom(:,max_index_ver),sum(tot_lon_imag_impedance_geom(:,setdiff(1:end, max_index_ver)),2)];                         
+        lon_real_plot = [lon_impedance_RW(:,1),tot_lon_real_impedance_geom(:,max_index_lon),sum(tot_lon_real_impedance_geom(:,setdiff(1:end, max_index_lon)),2)];
+        lon_imag_plot = [lon_impedance_RW(:,2),tot_lon_imag_impedance_geom(:,max_index_lon),sum(tot_lon_imag_impedance_geom(:,setdiff(1:end, max_index_lon)),2)];                 
+        
+        tot_hor_real_impedance = sum(hor_real_plot,2);
+        tot_hor_imag_impedance = sum(hor_imag_plot,2);
+        tot_ver_real_impedance = sum(ver_real_plot,2);
+        tot_ver_imag_impedance = sum(ver_imag_plot,2);
+        tot_lon_real_impedance = sum(lon_real_plot,2);
+        tot_lon_imag_impedance = sum(lon_imag_plot,2);        
+        
         figure(6)
         subplot(211)
-        area(sampling_freq,-hor_real_impedance.*1e3.*1e-3,'LineStyle','None')
-        ylabel('Re Z_x [k\Omega/m]')
+        area(sampling_freq.*1e-9,hor_real_plot(:,1).*1e-6,'LineStyle','None');
+        hold on
+        area(sampling_freq.*1e-9,hor_real_plot(:,2).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,hor_real_plot(:,3).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,hor_real_plot(:,4).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,hor_real_plot(:,5).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,hor_real_plot(:,6).*1e-6,'LineStyle','None');        
+        plot(sampling_freq.*1e-9,tot_hor_real_impedance.*1e-6,'Color',[0.7,0.7,0.7]);
+        hold off
+        ylabel('Re \beta_x Z_x [M\Omega/m]')
         xlabel('Frequency [GHz]')
-        legend(labels)
+        legend(['RW';classes(max_index_hor);'Other';'Total'],'Location','NorthEastOutside')
 
         subplot(212)
-        area(sampling_freq,-hor_imag_impedance.*1e3.*1e-3,'LineStyle','None')
-        ylabel('Im Z_x [k\Omega/m]')
+        area(sampling_freq.*1e-9,hor_imag_plot(:,1).*1e-6,'LineStyle','None');
+        hold on
+        area(sampling_freq.*1e-9,hor_imag_plot(:,2).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,hor_imag_plot(:,3).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,hor_imag_plot(:,4).*1e-6,'LineStyle','None');     
+        area(sampling_freq.*1e-9,hor_imag_plot(:,5).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,hor_imag_plot(:,6).*1e-6,'LineStyle','None');        
+        plot(sampling_freq.*1e-9,tot_hor_imag_impedance.*1e-6,'Color',[0.7,0.7,0.7]);
+        hold off
+        ylabel('Im \beta_x Z_x [M\Omega/m]')
         xlabel('Frequency [GHz]')
-        legend(labels)
-
+        legend(['RW';classes(max_index_hor);'Other';'Total'],'Location','NorthEastOutside')
+ 
         figure(7)
         subplot(211)
-        area(sampling_freq,-ver_real_impedance.*1e3.*1e-3,'LineStyle','None')
-        ylabel('Re Z_y [k\Omega/m]')
+        area(sampling_freq.*1e-9,ver_real_plot(:,1).*1e-6,'LineStyle','None');
+        hold on
+        area(sampling_freq.*1e-9,ver_real_plot(:,2).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,ver_real_plot(:,3).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,ver_real_plot(:,4).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,ver_real_plot(:,5).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,ver_real_plot(:,6).*1e-6,'LineStyle','None');
+        plot(sampling_freq.*1e-9,tot_ver_real_impedance.*1e-6,'Color',[0.7,0.7,0.7]);
+        hold off
+        ylabel('Re \beta_y Z_y [M\Omega/m]')
         xlabel('Frequency [GHz]')
-        legend(labels)
+        legend(['RW';classes(max_index_ver);'Other';'Total'],'Location','NorthEastOutside')
 
         subplot(212)
-        area(sampling_freq,-ver_imag_impedance.*1e3.*1e-3,'LineStyle','None')
-        ylabel('Im Z_y [k\Omega/m]')
+        area(sampling_freq.*1e-9,ver_imag_plot(:,1).*1e-6,'LineStyle','None');
+        hold on
+        area(sampling_freq.*1e-9,ver_imag_plot(:,2).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,ver_imag_plot(:,3).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,ver_imag_plot(:,4).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,ver_imag_plot(:,5).*1e-6,'LineStyle','None');
+        area(sampling_freq.*1e-9,ver_imag_plot(:,6).*1e-6,'LineStyle','None');        
+        plot(sampling_freq.*1e-9,tot_ver_imag_impedance.*1e-6,'Color',[0.7,0.7,0.7]);
+        hold off
+        ylabel('Im \beta_y Z_y [M\Omega/m]')
         xlabel('Frequency [GHz]')
-        legend(labels)
+        legend(['RW';classes(max_index_ver);'Other';'Total'],'Location','NorthEastOutside')
 
         figure(8)
         subplot(211)
-        area(sampling_freq,lon_real_impedance.*1e-3,'LineStyle','None')
+        area(sampling_freq.*1e-9,lon_real_plot(:,1).*1e-3,'LineStyle','None');
+        hold on
+        area(sampling_freq.*1e-9,lon_real_plot(:,2).*1e-3,'LineStyle','None');
+        area(sampling_freq.*1e-9,lon_real_plot(:,3).*1e-3,'LineStyle','None');
+        area(sampling_freq.*1e-9,lon_real_plot(:,4).*1e-3,'LineStyle','None');
+        area(sampling_freq.*1e-9,lon_real_plot(:,5).*1e-3,'LineStyle','None');
+        area(sampling_freq.*1e-9,lon_real_plot(:,6).*1e-3,'LineStyle','None');        
+        plot(sampling_freq.*1e-9,tot_lon_real_impedance.*1e-3,'Color',[0.7,0.7,0.7]);    
+        hold off
         ylabel('Re Z_L [k\Omega]')
         xlabel('Frequency [GHz]')
-        legend(labels)
+        legend(['RW';classes(max_index_lon);'Other';'Total'],'Location','NorthEastOutside')
 
         subplot(212)
-        area(sampling_freq,lon_imag_impedance.*1e-3,'LineStyle','None')
+        area(sampling_freq.*1e-9,lon_imag_plot(:,1).*1e-3,'LineStyle','None');
+        hold on
+        area(sampling_freq.*1e-9,lon_imag_plot(:,2).*1e-3,'LineStyle','None');
+        area(sampling_freq.*1e-9,lon_imag_plot(:,3).*1e-3,'LineStyle','None');
+        area(sampling_freq.*1e-9,lon_imag_plot(:,4).*1e-3,'LineStyle','None');
+        area(sampling_freq.*1e-9,lon_imag_plot(:,5).*1e-3,'LineStyle','None');
+        area(sampling_freq.*1e-9,lon_imag_plot(:,6).*1e-3,'LineStyle','None');        
+        plot(sampling_freq.*1e-9,tot_lon_imag_impedance.*1e-3,'Color',[0.7,0.7,0.7]);    
+        hold off          
         ylabel('Im Z_L [k\Omega]')
         xlabel('Frequency [GHz]')
-        legend(labels)
+        legend(['RW';classes(max_index_lon);'Other';'Total'],'Location','NorthEastOutside')
                
     end
 
