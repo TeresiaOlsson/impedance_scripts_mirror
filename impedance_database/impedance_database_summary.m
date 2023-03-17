@@ -4,7 +4,7 @@ function impedance_database_summary(IMPRING,beta_file)
 % pie_flag - calculate loss/kick factor and plot pie charts
 % impedance_flag - plot impedance as function of frequency
 
-aperture_flag = 1;
+aperture_flag = 0;
 pie_flag = 1;
 impedance_flag = 1;
 
@@ -188,7 +188,7 @@ impedance_flag = 1;
         end
         
         % Calculate loss/kick factors for each component
-        sigma_s = 3e-3; % This must match bunch length used in CST calculations.
+        sigma_s = 0.5e-3; % This must match bunch length used in CST calculations.
         c = 299792458;
         sigma_t = sigma_s./c;
         
@@ -197,13 +197,13 @@ impedance_flag = 1;
         ver_kick_factors = zeros(length(components),3);
                     
         for i = 1:length(components)
-            
+            i
             % Get element in family
             element_index = findcells(IMPRING,'FamName',components{i});
             element_index = element_index(1);
             
             % Resistive-wall    
-            if ~isempty(IMPRING{element_index}.RW_impedance_files)
+            if isfield(IMPRING{element_index},'RW_impedance_files') && ~isempty(IMPRING{element_index}.RW_impedance_files)
                 
                 % Get length
                 RW_length = IMPRING{element_index}.Length;
@@ -240,7 +240,7 @@ impedance_flag = 1;
            end            
                        
             % Geometric        
-            if ~isempty(IMPRING{element_index}.Geom_impedance_files)
+            if isfield(IMPRING{element_index},'Geom_impedance_files') && ~isempty(IMPRING{element_index}.Geom_impedance_files)
                 
                 % --- Hor kick factor ---
                 
@@ -400,7 +400,7 @@ impedance_flag = 1;
     if impedance_flag
         
         % Frequency interpolation parameters
-        sampling_freq = linspace(0,35e9,1e4)';
+        sampling_freq = linspace(0,200e9,1e4)';
         
         % Get local average beta
         average_betax = ones(1,length(IMPRING)-1);
@@ -445,24 +445,25 @@ impedance_flag = 1;
             tot_average_betax = sum(average_betax(element_index));
             tot_average_betay = sum(average_betay(element_index));
             
+            element_index = element_index(1);
             % Resistive-wall
             
             % Get length
-            RW_length = IMPRING{element_index(1)}.Length;
+            RW_length = IMPRING{element_index}.Length;
             
-            if ~isempty(IMPRING{element_index(1)}.RW_impedance_files)
+            if isfield(IMPRING{element_index},'RW_impedance_files') && ~isempty(IMPRING{element_index}.RW_impedance_files)
                 
-                hor_data = importdata(IMPRING{element_index(1)}.RW_impedance_files{1}).data;
+                hor_data = importdata(IMPRING{element_index}.RW_impedance_files{1}).data;
                 real_impedance = interp1(hor_data(:,1),hor_data(:,3),sampling_freq,'linear',0).*RW_length.*tot_average_betax;
                 imag_impedance = interp1(hor_data(:,1),-hor_data(:,2),sampling_freq,'linear',0).*RW_length.*tot_average_betax;
                 hor_impedance_RW = hor_impedance_RW + [real_impedance,imag_impedance];
                 
-                ver_data = importdata(IMPRING{element_index(1)}.RW_impedance_files{2}).data;
+                ver_data = importdata(IMPRING{element_index}.RW_impedance_files{2}).data;
                 real_impedance = interp1(ver_data(:,1),ver_data(:,3),sampling_freq,'linear',0).*RW_length.*tot_average_betay;
                 imag_impedance = interp1(ver_data(:,1),-ver_data(:,2),sampling_freq,'linear',0).*RW_length.*tot_average_betay;
                 ver_impedance_RW = ver_impedance_RW + [real_impedance,imag_impedance];                
                 
-                lon_data = importdata(IMPRING{element_index(1)}.RW_impedance_files{3}).data;
+                lon_data = importdata(IMPRING{element_index}.RW_impedance_files{3}).data;
                 real_impedance = interp1(lon_data(:,1),lon_data(:,2),sampling_freq,'linear',0).*RW_length.*component_amount(i);
                 imag_impedance = interp1(lon_data(:,1),lon_data(:,3),sampling_freq,'linear',0).*RW_length.*component_amount(i);
                 lon_impedance_RW = lon_impedance_RW + [real_impedance,imag_impedance];
@@ -471,9 +472,9 @@ impedance_flag = 1;
                 
             % Geometric
         
-            if ~isempty(IMPRING{element_index(1)}.Geom_impedance_files)
+            if isfield(IMPRING{element_index},'Geom_impedance_files') && ~isempty(IMPRING{element_index}.Geom_impedance_files)
                 
-                fileID = fopen(IMPRING{element_index(1)}.Geom_impedance_files{1});
+                fileID = fopen(IMPRING{element_index}.Geom_impedance_files{1});
                 data = textscan(fileID,'%f %f %f','CommentStyle','#');
                 fclose(fileID);
                 hor_data = cell2mat(data);  % Units GHz, Ohm/mm
@@ -487,7 +488,7 @@ impedance_flag = 1;
                 hor_real_impedance_geom(:,i) = real_impedance_interp;
                 hor_imag_impedance_geom(:,i) = imag_impedance_interp;
 
-                fileID = fopen(IMPRING{element_index(1)}.Geom_impedance_files{2});
+                fileID = fopen(IMPRING{element_index}.Geom_impedance_files{2});
                 data = textscan(fileID,'%f %f %f','CommentStyle','#');
                 fclose(fileID);
                 ver_data = cell2mat(data);  % Units GHz, Ohm/mm
@@ -501,7 +502,7 @@ impedance_flag = 1;
                 ver_real_impedance_geom(:,i) = real_impedance_interp;
                 ver_imag_impedance_geom(:,i) = imag_impedance_interp;
             
-                fileID = fopen(IMPRING{element_index(1)}.Geom_impedance_files{3});
+                fileID = fopen(IMPRING{element_index}.Geom_impedance_files{3});
                 data = textscan(fileID,'%f %f %f','CommentStyle','#');
                 fclose(fileID);
                 lon_data = cell2mat(data);  % Units GHz, Ohm
